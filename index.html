@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Sessions</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Google+Sans+Text:wght@400;500&family=Fira+Code:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Google Sans Text', 'Fira Code', system-ui, sans-serif;
+    background: #fff;
+    color: #1a1a1a;
+    padding: 40px 48px;
+  }
+
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 16px;
+  }
+
+  .header h1 {
+    font-family: 'Fira Code', monospace;
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .header-meta {
+    font-size: 12px;
+    color: #888;
+    font-family: 'Fira Code', monospace;
+  }
+
+  .stats-row {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    flex: 1;
+    border: 1px solid #000;
+    padding: 16px 20px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    font-family: 'Fira Code', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-family: 'Fira Code', monospace;
+    font-size: 28px;
+    font-weight: 500;
+  }
+
+  .stat-value.alive { color: #4a90d9; }
+  .stat-value.dead { color: #c0392b; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead th {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid #000;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    background: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  thead th:hover { color: #4a90d9; }
+  thead th.sorted { color: #000; }
+  thead th .sort-arrow { margin-left: 4px; font-size: 9px; }
+
+  tbody tr {
+    border-bottom: 1px solid #ddd;
+    transition: background 0.1s;
+  }
+
+  tbody tr:hover { background: #f8f8f8; }
+
+  td {
+    padding: 10px 12px;
+    vertical-align: top;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    position: relative;
+    top: -1px;
+  }
+
+  .status-dot.alive {
+    background: #4a90d9;
+    box-shadow: 0 0 6px rgba(74, 144, 217, 0.5);
+  }
+
+  .status-dot.dead { background: #ccc; }
+
+  .session-name {
+    font-weight: 500;
+    color: #1a1a1a;
+  }
+
+  .session-name.unnamed {
+    color: #aaa;
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  .cwd {
+    color: #666;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cost {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .messages {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .time-ago { color: #888; white-space: nowrap; }
+
+  .resume-cmd {
+    font-size: 11px;
+    color: #4a90d9;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid #4a90d9;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: transparent;
+    transition: all 0.15s;
+  }
+
+  .resume-cmd:hover {
+    background: #4a90d9;
+    color: #fff;
+  }
+
+  .copied {
+    background: #4a90d9 !important;
+    color: #fff !important;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 0;
+    color: #888;
+    font-family: 'Fira Code', monospace;
+  }
+
+  .filter-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+
+  .filter-row input {
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    outline: none;
+    flex: 1;
+    max-width: 400px;
+  }
+
+  .filter-row input:focus { border-color: #4a90d9; }
+
+  .filter-btn {
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+  }
+
+  .filter-btn:hover { border-color: #000; }
+  .filter-btn.active { border-color: #000; background: #000; color: #fff; }
+
+  .duration {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td.cost, th.cost { text-align: right; }
+  td.messages, th.messages { text-align: right; }
+  td.duration, th.duration { text-align: right; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Claude Sessions</h1>
+  <div class="header-meta">
+    <span id="last-updated"></span>
+    &middot; auto-refresh 10s
+  </div>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">Active</div>
+    <div class="stat-value alive" id="stat-alive">-</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Dead</div>
+    <div class="stat-value dead" id="stat-dead">-</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Sessions</div>
+    <div class="stat-value" id="stat-total">-</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Cost</div>
+    <div class="stat-value" id="stat-cost">-</div>
+  </div>
+</div>
+
+<div class="filter-row">
+  <input type="text" id="search" placeholder="Filter by name or directory..." />
+  <button class="filter-btn" id="btn-all">All</button>
+  <button class="filter-btn active" id="btn-alive">Active</button>
+  <button class="filter-btn" id="btn-dead">Dead</button>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th data-sort="alive">Status</th>
+      <th data-sort="name">Name</th>
+      <th data-sort="cwd">Directory</th>
+      <th data-sort="totalMessages" class="messages">Messages</th>
+      <th data-sort="totalCost" class="cost">Cost</th>
+      <th data-sort="totalDurationMs" class="duration">Duration</th>
+      <th data-sort="startedAt">Started</th>
+      <th data-sort="lastActivity">Last Active</th>
+      <th>Resume</th>
+    </tr>
+  </thead>
+  <tbody id="sessions-body">
+  </tbody>
+</table>
+
+<div class="empty-state" id="empty" style="display:none">No sessions found</div>
+
+<script>
+let sessions = [];
+let sortKey = 'lastActivity';
+let sortDir = -1; // -1 = desc
+let statusFilter = 'alive';
+
+function timeAgo(ts) {
+  if (!ts) return '-';
+  const now = Date.now() / 1000;
+  const diff = now - ts;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function formatDate(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatCost(c) {
+  if (!c) return '-';
+  return '$' + c.toFixed(2);
+}
+
+function formatDuration(ms) {
+  if (!ms) return '-';
+  const s = ms / 1000;
+  if (s < 60) return `${Math.floor(s)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+function shortenPath(p) {
+  if (!p) return '';
+  return p.replace(/^\/Users\/[^/]+\//, '~/');
+}
+
+function render() {
+  const query = document.getElementById('search').value.toLowerCase();
+  let filtered = sessions.filter(s => {
+    if (statusFilter === 'alive' && !s.alive) return false;
+    if (statusFilter === 'dead' && s.alive) return false;
+    if (query) {
+      const hay = `${s.name} ${s.cwd} ${s.sessionId}`.toLowerCase();
+      return hay.includes(query);
+    }
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (typeof av === 'boolean') { av = av ? 1 : 0; bv = bv ? 1 : 0; }
+    if (av < bv) return -1 * sortDir;
+    if (av > bv) return 1 * sortDir;
+    return 0;
+  });
+
+  const tbody = document.getElementById('sessions-body');
+  const empty = document.getElementById('empty');
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map(s => `
+    <tr>
+      <td><span class="status-dot ${s.alive ? 'alive' : 'dead'}"></span>${s.alive ? 'alive' : 'dead'}</td>
+      <td><span class="session-name ${s.name ? '' : 'unnamed'}">${s.name || 'unnamed'}</span></td>
+      <td class="cwd" title="${s.cwd}">${shortenPath(s.cwd)}</td>
+      <td class="messages">${s.totalMessages || '-'}</td>
+      <td class="cost">${formatCost(s.totalCost)}</td>
+      <td class="duration">${formatDuration(s.totalDurationMs)}</td>
+      <td class="time-ago" title="${formatDate(s.startedAt)}">${timeAgo(s.startedAt)}</td>
+      <td class="time-ago" title="${formatDate(s.lastActivity)}">${timeAgo(s.lastActivity)}</td>
+      <td><button class="resume-cmd" onclick="copyResume(this, '${s.sessionId}', '${s.cwd.replace(/'/g, "\\'")}')">copy</button></td>
+    </tr>
+  `).join('');
+
+  // Update sort arrows
+  document.querySelectorAll('thead th').forEach(th => {
+    const key = th.dataset.sort;
+    th.classList.toggle('sorted', key === sortKey);
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.remove();
+    if (key === sortKey) {
+      th.insertAdjacentHTML('beforeend',
+        `<span class="sort-arrow">${sortDir === 1 ? '\u2191' : '\u2193'}</span>`);
+    }
+  });
+}
+
+function copyResume(btn, sessionId, cwd) {
+  const cmd = `cd ${cwd} && claude --resume ${sessionId}`;
+  navigator.clipboard.writeText(cmd);
+  btn.textContent = 'copied';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = 'copy';
+    btn.classList.remove('copied');
+  }, 1500);
+}
+
+function updateStats() {
+  const alive = sessions.filter(s => s.alive).length;
+  const dead = sessions.filter(s => !s.alive).length;
+  const cost = sessions.reduce((a, s) => a + (s.totalCost || 0), 0);
+  document.getElementById('stat-alive').textContent = alive;
+  document.getElementById('stat-dead').textContent = dead;
+  document.getElementById('stat-total').textContent = sessions.length;
+  document.getElementById('stat-cost').textContent = formatCost(cost);
+}
+
+async function fetchSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    const data = await res.json();
+    sessions = data.sessions;
+    updateStats();
+    render();
+    document.getElementById('last-updated').textContent =
+      'updated ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch (e) {
+    console.error('Failed to fetch sessions:', e);
+  }
+}
+
+// Sort
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (sortKey === key) {
+      sortDir *= -1;
+    } else {
+      sortKey = key;
+      sortDir = -1;
+    }
+    render();
+  });
+});
+
+// Filters
+document.getElementById('search').addEventListener('input', render);
+
+['all', 'alive', 'dead'].forEach(f => {
+  document.getElementById(`btn-${f}`).addEventListener('click', () => {
+    statusFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`btn-${f}`).classList.add('active');
+    render();
+  });
+});
+
+// Initial load + auto-refresh
+fetchSessions();
+setInterval(fetchSessions, 10000);
+</script>
+
+</body>
+</html>
