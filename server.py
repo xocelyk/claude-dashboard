@@ -3,16 +3,24 @@
 
 import json
 import os
-import signal
-import sqlite3
 import time
+from datetime import datetime, timezone
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 CLAUDE_DIR = Path.home() / ".claude"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
-DB_PATH = CLAUDE_DIR / "__store.db"
+PROJECTS_DIR = CLAUDE_DIR / "projects"
 PORT = 7227
+
+# Approximate cost per token by model (USD) — input/output
+# Uses cache-read pricing where applicable
+COST_PER_TOKEN = {
+    "input": 15.0 / 1_000_000,   # $15 per 1M input tokens (Opus default)
+    "output": 75.0 / 1_000_000,  # $75 per 1M output tokens (Opus default)
+    "cache_read": 1.5 / 1_000_000,  # $1.50 per 1M cached input tokens
+    "cache_write": 18.75 / 1_000_000,  # $18.75 per 1M cache creation tokens
+}
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -37,64 +45,131 @@ def get_session_files() -> list[dict]:
     return sessions
 
 
-def get_db_stats() -> dict:
-    if not DB_PATH.exists():
-        return {}
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+def _iso_to_epoch(ts_str: str) -> float:
+    """Convert ISO 8601 timestamp string to epoch seconds."""
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except (ValueError, AttributeError):
+        return 0.0
 
+
+def _estimate_cost(usage: dict) -> float:
+    """Estimate cost in USD from a usage dict."""
+    input_tokens = usage.get("input_tokens", 0)
+    output_tokens = usage.get("output_tokens", 0)
+    cache_read = usage.get("cache_read_input_tokens", 0)
+    cache_write = usage.get("cache_creation_input_tokens", 0)
+    # Non-cached input tokens = total input minus cached
+    plain_input = max(0, input_tokens - cache_read)
+    return (
+        plain_input * COST_PER_TOKEN["input"]
+        + output_tokens * COST_PER_TOKEN["output"]
+        + cache_read * COST_PER_TOKEN["cache_read"]
+        + cache_write * COST_PER_TOKEN["cache_write"]
+    )
+
+
+def _find_jsonl(session_id: str) -> Path | None:
+    """Find the JSONL file for a given session ID."""
+    if not PROJECTS_DIR.exists():
+        return None
+    for jsonl in PROJECTS_DIR.rglob(f"{session_id}.jsonl"):
+        # Skip subagent files
+        if "subagents" not in str(jsonl):
+            return jsonl
+    return None
+
+
+def get_jsonl_stats() -> dict:
+    """Parse JSONL files to get message counts, cost, duration, timestamps per session."""
     stats = {}
+    if not PROJECTS_DIR.exists():
+        return stats
 
-    # Message counts, timestamps, and cwd per session
-    cur.execute("""
-        SELECT
-            session_id,
-            COUNT(*) as total_messages,
-            SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as user_messages,
-            SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as assistant_messages,
-            MIN(timestamp) as first_message_at,
-            MAX(timestamp) as last_message_at,
-            original_cwd
-        FROM base_messages
-        GROUP BY session_id
-    """)
-    for row in cur.fetchall():
-        sid = row["session_id"]
-        stats[sid] = {
-            "total_messages": row["total_messages"],
-            "user_messages": row["user_messages"],
-            "assistant_messages": row["assistant_messages"],
-            "first_message_at": row["first_message_at"],
-            "last_message_at": row["last_message_at"],
-            "cwd": row["original_cwd"] or "",
-        }
+    # Find all non-subagent JSONL files
+    for jsonl_path in PROJECTS_DIR.rglob("*.jsonl"):
+        if "subagents" in str(jsonl_path):
+            continue
 
-    # Cost and duration per session
-    cur.execute("""
-        SELECT
-            bm.session_id,
-            SUM(am.cost_usd) as total_cost,
-            SUM(am.duration_ms) as total_duration_ms,
-            am.model
-        FROM assistant_messages am
-        JOIN base_messages bm ON am.uuid = bm.uuid
-        GROUP BY bm.session_id
-    """)
-    for row in cur.fetchall():
-        sid = row["session_id"]
-        if sid in stats:
-            stats[sid]["total_cost"] = row["total_cost"]
-            stats[sid]["total_duration_ms"] = row["total_duration_ms"]
-            stats[sid]["model"] = row["model"]
+        session_id = jsonl_path.stem
+        total = 0
+        user_msgs = 0
+        assistant_msgs = 0
+        first_ts = None
+        last_ts = None
+        total_cost = 0.0
+        model = ""
+        cwd = ""
+        first_assistant_ts = None
+        last_assistant_ts = None
 
-    conn.close()
+        try:
+            with open(jsonl_path) as f:
+                for line in f:
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    msg_type = msg.get("type", "")
+                    ts_str = msg.get("timestamp", "")
+                    ts = _iso_to_epoch(ts_str) if ts_str else 0
+
+                    if msg_type in ("user", "assistant"):
+                        total += 1
+                        if ts:
+                            if first_ts is None or ts < first_ts:
+                                first_ts = ts
+                            if last_ts is None or ts > last_ts:
+                                last_ts = ts
+
+                        if not cwd and msg.get("cwd"):
+                            cwd = msg["cwd"]
+
+                    if msg_type == "user":
+                        user_msgs += 1
+                    elif msg_type == "assistant":
+                        assistant_msgs += 1
+                        inner = msg.get("message", {})
+                        if isinstance(inner, dict):
+                            usage = inner.get("usage", {})
+                            if usage:
+                                total_cost += _estimate_cost(usage)
+                            if inner.get("model"):
+                                model = inner["model"]
+                            if ts:
+                                if first_assistant_ts is None or ts < first_assistant_ts:
+                                    first_assistant_ts = ts
+                                if last_assistant_ts is None or ts > last_assistant_ts:
+                                    last_assistant_ts = ts
+        except OSError:
+            continue
+
+        if total > 0:
+            # Duration: time between first and last assistant message
+            duration_ms = 0
+            if first_assistant_ts and last_assistant_ts:
+                duration_ms = int((last_assistant_ts - first_assistant_ts) * 1000)
+
+            stats[session_id] = {
+                "total_messages": total,
+                "user_messages": user_msgs,
+                "assistant_messages": assistant_msgs,
+                "first_message_at": first_ts,
+                "last_message_at": last_ts,
+                "total_cost": round(total_cost, 6),
+                "total_duration_ms": duration_ms,
+                "model": model,
+                "cwd": cwd,
+            }
+
     return stats
 
 
 def build_sessions_json() -> str:
     session_files = get_session_files()
-    db_stats = get_db_stats()
+    db_stats = get_jsonl_stats()
 
     sessions = []
     seen_sids = set()
