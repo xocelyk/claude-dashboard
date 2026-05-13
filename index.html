@@ -277,7 +277,7 @@
       <th data-sort="cwd">Directory</th>
       <th data-sort="totalMessages" class="messages">Messages</th>
       <th data-sort="totalCost" class="cost">Cost</th>
-      <th data-sort="totalDurationMs" class="duration">Duration</th>
+      <th data-sort="totalDurationMs" class="duration" title="Time between first and last assistant turn — wall-clock span, not active time.">Span</th>
       <th data-sort="startedAt">Started</th>
       <th data-sort="lastActivity">Last Active</th>
       <th>Resume</th>
@@ -308,8 +308,15 @@ function timeAgo(ts) {
 function formatDate(ts) {
   if (!ts) return '-';
   const d = new Date(ts * 1000);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const opts = { month: 'short', day: 'numeric' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString('en-US', opts)
     + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function shellQuote(s) {
+  // POSIX single-quote escape: wrap in '...', and replace inner ' with '\''
+  return `'${String(s == null ? '' : s).replace(/'/g, "'\\''")}'`;
 }
 
 function formatCost(c) {
@@ -332,6 +339,13 @@ function shortenPath(p) {
   return p.replace(/^\/Users\/[^/]+\//, '~/');
 }
 
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 function render() {
   const query = document.getElementById('search').value.toLowerCase();
   let filtered = sessions.filter(s => {
@@ -346,6 +360,12 @@ function render() {
 
   filtered.sort((a, b) => {
     let av = a[sortKey], bv = b[sortKey];
+    // Sort empty names to the end regardless of direction
+    if (sortKey === 'name') {
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+    }
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
     if (typeof av === 'boolean') { av = av ? 1 : 0; bv = bv ? 1 : 0; }
@@ -359,6 +379,9 @@ function render() {
 
   if (filtered.length === 0) {
     tbody.innerHTML = '';
+    empty.textContent = (statusFilter === 'alive' && sessions.length > 0)
+      ? "No alive sessions. Click 'All' to see history."
+      : 'No sessions found';
     empty.style.display = 'block';
     return;
   }
@@ -367,14 +390,14 @@ function render() {
   tbody.innerHTML = filtered.map(s => `
     <tr>
       <td><span class="status-dot ${s.alive ? 'alive' : 'dead'}"></span>${s.alive ? 'alive' : 'dead'}</td>
-      <td><span class="session-name ${s.name ? '' : 'unnamed'}">${s.name || 'unnamed'}</span></td>
-      <td class="cwd" title="${s.cwd}">${shortenPath(s.cwd)}</td>
+      <td><span class="session-name ${s.name ? '' : 'unnamed'}">${escapeHtml(s.name) || 'unnamed'}</span></td>
+      <td class="cwd" title="${escapeHtml(s.cwd)}">${escapeHtml(shortenPath(s.cwd))}</td>
       <td class="messages">${s.totalMessages || '-'}</td>
       <td class="cost">${formatCost(s.totalCost)}</td>
       <td class="duration">${formatDuration(s.totalDurationMs)}</td>
       <td class="time-ago" title="${formatDate(s.startedAt)}">${timeAgo(s.startedAt)}</td>
       <td class="time-ago" title="${formatDate(s.lastActivity)}">${timeAgo(s.lastActivity)}</td>
-      <td><button class="resume-cmd" onclick="copyResume(this, '${s.sessionId}', '${s.cwd.replace(/'/g, "\\'")}')">copy</button></td>
+      <td><button class="resume-cmd" data-sid="${escapeHtml(s.sessionId)}" data-cwd="${escapeHtml(s.cwd)}">copy</button></td>
     </tr>
   `).join('');
 
@@ -392,7 +415,7 @@ function render() {
 }
 
 function copyResume(btn, sessionId, cwd) {
-  const cmd = `cd ${cwd} && claude --resume ${sessionId}`;
+  const cmd = `cd ${shellQuote(cwd)} && claude --resume ${shellQuote(sessionId)}`;
   navigator.clipboard.writeText(cmd);
   btn.textContent = 'copied';
   btn.classList.add('copied');
@@ -401,6 +424,12 @@ function copyResume(btn, sessionId, cwd) {
     btn.classList.remove('copied');
   }, 1500);
 }
+
+document.getElementById('sessions-body').addEventListener('click', e => {
+  const btn = e.target.closest('.resume-cmd');
+  if (!btn) return;
+  copyResume(btn, btn.dataset.sid, btn.dataset.cwd);
+});
 
 function updateStats() {
   const alive = sessions.filter(s => s.alive).length;
