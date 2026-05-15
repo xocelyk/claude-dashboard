@@ -26,6 +26,14 @@ Then open <http://127.0.0.1:7227>.
 
 The server binds to `127.0.0.1` only — it is not reachable from other machines.
 
+### Demo mode
+
+```bash
+python server.py --demo
+```
+
+Serves a hardcoded fake dataset instead of reading your `~/.claude/` directory. Useful for previewing the UI before installing Claude Code, or for generating screenshots.
+
 ## How it works
 
 It reads two locations under `~/.claude/`:

@@ -4,10 +4,13 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from datetime import datetime
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+
+DEMO_MODE = "--demo" in sys.argv
 
 CLAUDE_DIR = Path.home() / ".claude"
 SESSIONS_DIR = CLAUDE_DIR / "sessions"
@@ -314,11 +317,64 @@ def build_sessions_json() -> str:
     return json.dumps({"sessions": sessions, "timestamp": time.time()})
 
 
+def _demo_sessions_json() -> str:
+    """Hardcoded fake data for screenshots / previewing without any real sessions."""
+    now = time.time()
+    HOUR = 3600
+    DAY = 86400
+    sessions = [
+        {"sessionId": "demo-001", "pid": 11001, "name": "Refactor checkout flow validation",
+         "cwd": "~/projects/shop-api",
+         "startedAt": now - HOUR, "lastActivity": now - 2, "alive": True,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 87, "userMessages": 29, "assistantMessages": 58,
+         "totalCost": 14.32, "totalDurationMs": 2_134_000, "model": "claude-opus-4-7"},
+        {"sessionId": "demo-002", "pid": 11002, "name": "Wire up Stripe webhook idempotency",
+         "cwd": "~/projects/shop-api",
+         "startedAt": now - 1800, "lastActivity": now - 45, "alive": True,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 42, "userMessages": 14, "assistantMessages": 28,
+         "totalCost": 6.18, "totalDurationMs": 1_287_000, "model": "claude-sonnet-4-6"},
+        {"sessionId": "demo-003", "pid": 11003, "name": "Investigate flaky CI test on macOS",
+         "cwd": "~/projects/shop-api",
+         "startedAt": now - 900, "lastActivity": now - 120, "alive": True,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 24, "userMessages": 8, "assistantMessages": 16,
+         "totalCost": 3.04, "totalDurationMs": 612_000, "model": "claude-sonnet-4-6"},
+        {"sessionId": "demo-004", "pid": 11004, "name": "Polish README before public release",
+         "cwd": "~/projects/claude-dashboard",
+         "startedAt": now - 600, "lastActivity": now - 30, "alive": True,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 18, "userMessages": 6, "assistantMessages": 12,
+         "totalCost": 1.92, "totalDurationMs": 380_000, "model": "claude-opus-4-7"},
+        {"sessionId": "demo-005", "pid": None, "name": "Migrate ORM from Sequelize to Prisma",
+         "cwd": "~/projects/shop-api",
+         "startedAt": now - 2 * DAY, "lastActivity": now - 2 * DAY + 4 * HOUR, "alive": False,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 312, "userMessages": 98, "assistantMessages": 214,
+         "totalCost": 84.20, "totalDurationMs": 14_400_000, "model": "claude-opus-4-7"},
+        {"sessionId": "demo-006", "pid": None, "name": "Draft RFC for queue partitioning",
+         "cwd": "~/projects/shop-api",
+         "startedAt": now - 5 * DAY, "lastActivity": now - 5 * DAY + 1800, "alive": False,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 46, "userMessages": 15, "assistantMessages": 31,
+         "totalCost": 7.81, "totalDurationMs": 1_650_000, "model": "claude-sonnet-4-6"},
+        {"sessionId": "demo-007", "pid": None, "name": "Fix off-by-one in pagination helper",
+         "cwd": "~/projects/blog-engine",
+         "startedAt": now - 7 * DAY, "lastActivity": now - 7 * DAY + 600, "alive": False,
+         "kind": "interactive", "entrypoint": "",
+         "totalMessages": 12, "userMessages": 4, "assistantMessages": 8,
+         "totalCost": 0.84, "totalDurationMs": 420_000, "model": "claude-haiku-4-5"},
+    ]
+    sessions.sort(key=lambda s: s["lastActivity"] or 0, reverse=True)
+    return json.dumps({"sessions": sessions, "timestamp": now})
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         try:
             if self.path == "/api/sessions":
-                data = build_sessions_json()
+                data = _demo_sessions_json() if DEMO_MODE else build_sessions_json()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
@@ -342,7 +398,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), DashboardHandler)
-    print(f"Dashboard running at http://127.0.0.1:{PORT}")
+    banner = "Dashboard (DEMO MODE)" if DEMO_MODE else "Dashboard"
+    print(f"{banner} running at http://127.0.0.1:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
