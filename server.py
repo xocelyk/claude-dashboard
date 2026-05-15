@@ -15,11 +15,19 @@ PROJECTS_DIR = CLAUDE_DIR / "projects"
 PORT = 7227
 
 # Approximate USD-per-token rates by model family. Selection is by substring
-# match on the assistant turn's model id (e.g. "claude-opus-4-7" -> opus).
+# match on the assistant turn's model id (e.g. "claude-opus-4-7" -> opus-4-7).
+# Order matters — more-specific keys must come before broader ones; _rates_for
+# iterates in insertion order and returns the first hit.
+# Rates from https://platform.claude.com/docs/en/about-claude/pricing
 MODEL_RATES = {
-    "opus":   {"input": 15.0 / 1e6,  "output": 75.0 / 1e6, "cache_read": 1.5 / 1e6,  "cache_write": 18.75 / 1e6},
-    "sonnet": {"input": 3.0 / 1e6,   "output": 15.0 / 1e6, "cache_read": 0.3 / 1e6,  "cache_write": 3.75 / 1e6},
-    "haiku":  {"input": 1.0 / 1e6,   "output": 5.0 / 1e6,  "cache_read": 0.1 / 1e6,  "cache_write": 1.25 / 1e6},
+    # Opus 4.5+ uses the new lower pricing tier
+    "opus-4-7": {"input": 5.0 / 1e6,  "output": 25.0 / 1e6, "cache_read": 0.5 / 1e6, "cache_write": 6.25 / 1e6},
+    "opus-4-6": {"input": 5.0 / 1e6,  "output": 25.0 / 1e6, "cache_read": 0.5 / 1e6, "cache_write": 6.25 / 1e6},
+    "opus-4-5": {"input": 5.0 / 1e6,  "output": 25.0 / 1e6, "cache_read": 0.5 / 1e6, "cache_write": 6.25 / 1e6},
+    # Legacy Opus 4.0 / 4.1 pricing
+    "opus":     {"input": 15.0 / 1e6, "output": 75.0 / 1e6, "cache_read": 1.5 / 1e6, "cache_write": 18.75 / 1e6},
+    "sonnet":   {"input": 3.0 / 1e6,  "output": 15.0 / 1e6, "cache_read": 0.3 / 1e6, "cache_write": 3.75 / 1e6},
+    "haiku":    {"input": 1.0 / 1e6,  "output": 5.0 / 1e6,  "cache_read": 0.1 / 1e6, "cache_write": 1.25 / 1e6},
 }
 DEFAULT_RATES = MODEL_RATES["sonnet"]
 
