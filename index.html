@@ -231,6 +231,192 @@
   td.cost, th.cost { text-align: right; }
   td.messages, th.messages { text-align: right; }
   td.duration, th.duration { text-align: right; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .tab {
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .tab:hover { color: #1a1a1a; }
+  .tab.active { color: #000; border-bottom-color: #000; }
+
+  /* Usage view */
+  .usage-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .usage-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .date-range {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .date-range label {
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #888;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .date-range input {
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    padding: 7px 10px;
+    border: 1px solid #ccc;
+    outline: none;
+    color: #1a1a1a;
+    background: #fff;
+  }
+
+  .date-range input:focus { border-color: #4a90d9; }
+
+  .interval-toggle { display: flex; gap: 8px; }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    color: #555;
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+
+  .legend-swatch {
+    width: 11px;
+    height: 11px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .chart {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 300px;
+    border-bottom: 1px solid #000;
+    padding-top: 8px;
+    margin-bottom: 8px;
+  }
+
+  .chart-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 100%;
+    cursor: pointer;
+  }
+
+  .chart-stack {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .chart-seg { width: 100%; }
+  .chart-col:hover .chart-stack { opacity: 0.78; }
+
+  .seg-cacheRead  { background: #d6e4f0; }
+  .seg-cacheWrite { background: #9bbfdd; }
+  .seg-input      { background: #4a90d9; }
+  .seg-output     { background: #1a4d7a; }
+
+  .swatch-cacheRead  { background: #d6e4f0; }
+  .swatch-cacheWrite { background: #9bbfdd; }
+  .swatch-input      { background: #4a90d9; }
+  .swatch-output     { background: #1a4d7a; }
+
+  .chart-labels {
+    display: flex;
+    gap: 4px;
+  }
+
+  .chart-label {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-family: 'Fira Code', monospace;
+    font-size: 9px;
+    color: #999;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chart-tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: #000;
+    color: #fff;
+    font-family: 'Fira Code', monospace;
+    font-size: 11px;
+    padding: 10px 12px;
+    border-radius: 3px;
+    z-index: 100;
+    display: none;
+    min-width: 180px;
+    line-height: 1.5;
+  }
+
+  .chart-tooltip .tt-date {
+    font-size: 11px;
+    color: #9bbfdd;
+    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+  }
+
+  .chart-tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .chart-tooltip .tt-row.tt-total {
+    border-top: 1px solid #444;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .chart-tooltip .tt-label { display: flex; align-items: center; gap: 6px; }
+  .chart-tooltip .legend-swatch { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35); }
 </style>
 </head>
 <body>
@@ -243,6 +429,12 @@
   </div>
 </div>
 
+<div class="tabs">
+  <button class="tab active" id="tab-sessions">Sessions</button>
+  <button class="tab" id="tab-usage">Token Usage</button>
+</div>
+
+<div id="view-sessions">
 <div class="stats-row">
   <div class="stat-card">
     <div class="stat-label">Active</div>
@@ -288,12 +480,75 @@
 </table>
 
 <div class="empty-state" id="empty" style="display:none">No sessions found</div>
+</div><!-- /view-sessions -->
+
+<div id="view-usage" style="display:none">
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Tokens</div>
+      <div class="stat-value" id="usage-total">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Output Tokens</div>
+      <div class="stat-value" id="usage-output">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Input Tokens</div>
+      <div class="stat-value" id="usage-input">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cache Read</div>
+      <div class="stat-value" id="usage-cacheRead">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cache Write</div>
+      <div class="stat-value" id="usage-cacheWrite">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Cost</div>
+      <div class="stat-value" id="usage-cost">-</div>
+    </div>
+  </div>
+
+  <div class="usage-controls">
+    <div class="usage-controls-left">
+      <div class="date-range">
+        <label>From <input type="date" id="usage-from"></label>
+        <label>To <input type="date" id="usage-to"></label>
+      </div>
+      <div class="interval-toggle" id="usage-presets">
+        <button class="filter-btn" id="preset-today">Today</button>
+        <button class="filter-btn active" id="preset-week">Past Week</button>
+        <button class="filter-btn" id="preset-month">Past Month</button>
+        <button class="filter-btn" id="preset-all">All Time</button>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch swatch-output"></span>Output</div>
+      <div class="legend-item"><span class="legend-swatch swatch-input"></span>Input</div>
+      <div class="legend-item"><span class="legend-swatch swatch-cacheWrite"></span>Cache Write</div>
+      <div class="legend-item"><span class="legend-swatch swatch-cacheRead"></span>Cache Read</div>
+    </div>
+  </div>
+
+  <div class="chart" id="usage-chart"></div>
+  <div class="chart-labels" id="usage-labels"></div>
+  <div class="empty-state" id="usage-empty" style="display:none">No token usage recorded yet</div>
+</div><!-- /view-usage -->
+
+<div class="chart-tooltip" id="chart-tooltip"></div>
 
 <script>
 let sessions = [];
 let sortKey = 'lastActivity';
 let sortDir = -1; // -1 = desc
 let statusFilter = 'alive';
+
+let activeTab = 'sessions';
+let usageBuckets = [];      // hourly buckets from /api/usage
+let usageGroups = [];       // current roll-up rendered in the chart
+let usageGran = 'day';      // bar granularity, auto-derived from the range span
+let usageRangeInitialized = false;
 
 function timeAgo(ts) {
   if (!ts) return '-';
@@ -322,6 +577,14 @@ function shellQuote(s) {
 function formatCost(c) {
   if (!c) return '-';
   return '$' + c.toFixed(2);
+}
+
+function formatTokens(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
 }
 
 function formatDuration(ms) {
@@ -481,9 +744,297 @@ document.getElementById('search').addEventListener('input', render);
   });
 });
 
+// ---- Token usage view ----
+
+function toDateInputValue(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// [from, to) epoch-second bounds from the pickers. "To" is inclusive of its
+// whole day, so the exclusive upper bound is the start of the following day.
+function rangeBounds() {
+  const fromVal = document.getElementById('usage-from').value;
+  const toVal = document.getElementById('usage-to').value;
+  let fromTs = -Infinity, toTs = Infinity;
+  if (fromVal) fromTs = new Date(fromVal + 'T00:00:00').getTime() / 1000;
+  if (toVal) {
+    const d = new Date(toVal + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    toTs = d.getTime() / 1000;
+  }
+  return [fromTs, toTs];
+}
+
+// Pick bar granularity from the span: short windows get hourly bars, long
+// windows get weekly bars, everything in between is daily.
+function chooseGran(fromTs, toTs) {
+  const lo = isFinite(fromTs) ? fromTs : (usageBuckets[0] ? usageBuckets[0].hour : 0);
+  const hi = isFinite(toTs) ? toTs : (Date.now() / 1000);
+  const days = (hi - lo) / 86400;
+  if (days <= 2) return 'hour';
+  if (days <= 92) return 'day';
+  return 'week';
+}
+
+// Roll the hourly buckets up into hour / day / week buckets in local time.
+function groupBuckets(buckets, gran) {
+  const groups = new Map();
+  for (const b of buckets) {
+    let key;
+    if (gran === 'hour') {
+      key = b.hour * 1000;
+    } else {
+      const d = new Date(b.hour * 1000);
+      d.setHours(0, 0, 0, 0);
+      if (gran === 'week') {
+        const dow = (d.getDay() + 6) % 7; // shift so Monday = 0
+        d.setDate(d.getDate() - dow);
+      }
+      key = d.getTime();
+    }
+    let g = groups.get(key);
+    if (!g) {
+      g = { ts: key, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+      groups.set(key, g);
+    }
+    g.input += b.input;
+    g.output += b.output;
+    g.cacheRead += b.cacheRead;
+    g.cacheWrite += b.cacheWrite;
+    g.cost += b.cost;
+  }
+  return [...groups.values()].sort((a, b) => a.ts - b.ts);
+}
+
+// Snap a timestamp down to the start of its hour / day / week.
+function alignDown(sec, gran) {
+  const d = new Date(sec * 1000);
+  if (gran === 'hour') {
+    d.setMinutes(0, 0, 0);
+  } else {
+    d.setHours(0, 0, 0, 0);
+    if (gran === 'week') {
+      const dow = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - dow);
+    }
+  }
+  return d.getTime();
+}
+
+function stepKey(ms, gran) {
+  const d = new Date(ms);
+  if (gran === 'hour') d.setHours(d.getHours() + 1);
+  else if (gran === 'day') d.setDate(d.getDate() + 1);
+  else d.setDate(d.getDate() + 7);
+  return d.getTime();
+}
+
+// Expand sparse groups into a continuous evenly-spaced series across the range,
+// zero-filling buckets with no activity so the x-axis reads as a real timeline.
+// Stops at "now" so we never draw empty future buckets.
+function fillContinuous(groups, gran, fromTs, toTs) {
+  const byTs = new Map(groups.map(g => [g.ts, g]));
+  const nowSec = Date.now() / 1000;
+  const startSec = isFinite(fromTs) ? fromTs : (usageBuckets[0] ? usageBuckets[0].hour : nowSec);
+  const endMs = (isFinite(toTs) ? Math.min(toTs, nowSec + 1) : nowSec + 1) * 1000;
+  const out = [];
+  let key = alignDown(startSec, gran);
+  let guard = 0;
+  while (key < endMs && guard++ < 2000) {
+    out.push(byTs.get(key) || { ts: key, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
+    key = stepKey(key, gran);
+  }
+  return out.length ? out : groups;
+}
+
+function bucketLabel(ts, gran) {
+  const d = new Date(ts);
+  if (gran === 'hour') return d.toLocaleTimeString('en-US', { hour: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function ttDateLabel(ts, gran) {
+  const d = new Date(ts);
+  if (gran === 'hour') {
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' });
+  }
+  const s = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return gran === 'week' ? 'Week of ' + s : s;
+}
+
+// Top-to-bottom stacking order (output on top, cache-read at the base).
+const USAGE_TYPES = ['output', 'input', 'cacheWrite', 'cacheRead'];
+// Tallest stack fills this many px (kept under the 300px chart for headroom).
+const CHART_H = 280;
+
+function renderUsage() {
+  const chart = document.getElementById('usage-chart');
+  const labelsEl = document.getElementById('usage-labels');
+  const empty = document.getElementById('usage-empty');
+
+  // Restrict to the chosen date range, then everything below is range-scoped.
+  const [fromTs, toTs] = rangeBounds();
+  const inRange = usageBuckets.filter(b => b.hour >= fromTs && b.hour < toTs);
+  usageGran = chooseGran(fromTs, toTs);
+
+  // Summary cards reflect totals across the selected range.
+  const totals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  for (const b of inRange) {
+    totals.input += b.input;
+    totals.output += b.output;
+    totals.cacheRead += b.cacheRead;
+    totals.cacheWrite += b.cacheWrite;
+    totals.cost += b.cost;
+  }
+  const totalTokens = totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
+  document.getElementById('usage-total').textContent = formatTokens(totalTokens);
+  document.getElementById('usage-output').textContent = formatTokens(totals.output);
+  document.getElementById('usage-input').textContent = formatTokens(totals.input);
+  document.getElementById('usage-cacheRead').textContent = formatTokens(totals.cacheRead);
+  document.getElementById('usage-cacheWrite').textContent = formatTokens(totals.cacheWrite);
+  document.getElementById('usage-cost').textContent = formatCost(totals.cost);
+
+  const realGroups = groupBuckets(inRange, usageGran);
+
+  if (realGroups.length === 0) {
+    usageGroups = [];
+    chart.innerHTML = '';
+    labelsEl.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Zero-fill gaps so the chart is a continuous, evenly-spaced timeline.
+  usageGroups = fillContinuous(realGroups, usageGran, fromTs, toTs);
+
+  const max = Math.max(...usageGroups.map(g =>
+    g.input + g.output + g.cacheRead + g.cacheWrite)) || 1;
+
+  chart.innerHTML = usageGroups.map((g, i) => {
+    const segs = USAGE_TYPES.map(t =>
+      `<div class="chart-seg seg-${t}" style="height:${(g[t] / max) * CHART_H}px"></div>`
+    ).join('');
+    return `<div class="chart-col" data-i="${i}"><div class="chart-stack">${segs}</div></div>`;
+  }).join('');
+
+  // Thin out x-axis labels so they don't collide (~12 shown max).
+  const step = Math.max(1, Math.ceil(usageGroups.length / 12));
+  labelsEl.innerHTML = usageGroups.map((g, i) => {
+    const show = i % step === 0 || i === usageGroups.length - 1;
+    return `<div class="chart-label">${show ? bucketLabel(g.ts, usageGran) : ''}</div>`;
+  }).join('');
+}
+
+function showTooltip(e) {
+  const tt = document.getElementById('chart-tooltip');
+  const col = e.target.closest('.chart-col');
+  if (!col) { tt.style.display = 'none'; return; }
+  const g = usageGroups[+col.dataset.i];
+  if (!g) { tt.style.display = 'none'; return; }
+
+  const total = g.input + g.output + g.cacheRead + g.cacheWrite;
+  const row = (cls, label, val) =>
+    `<div class="tt-row"><span class="tt-label"><span class="legend-swatch swatch-${cls}"></span>${label}</span><span>${formatTokens(val)}</span></div>`;
+  tt.innerHTML =
+    `<div class="tt-date">${ttDateLabel(g.ts, usageGran)}</div>`
+    + row('output', 'Output', g.output)
+    + row('input', 'Input', g.input)
+    + row('cacheWrite', 'Cache Write', g.cacheWrite)
+    + row('cacheRead', 'Cache Read', g.cacheRead)
+    + `<div class="tt-row tt-total"><span>Total</span><span>${formatTokens(total)}</span></div>`
+    + `<div class="tt-row"><span>Cost</span><span>${formatCost(g.cost)}</span></div>`;
+
+  tt.style.display = 'block';
+  const rect = tt.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + rect.width > window.innerWidth) x = e.clientX - rect.width - 14;
+  if (y + rect.height > window.innerHeight) y = e.clientY - rect.height - 14;
+  tt.style.left = x + 'px';
+  tt.style.top = y + 'px';
+}
+
+(function () {
+  const chart = document.getElementById('usage-chart');
+  chart.addEventListener('mousemove', showTooltip);
+  chart.addEventListener('mouseleave', () => {
+    document.getElementById('chart-tooltip').style.display = 'none';
+  });
+})();
+
+// Quick-range presets. Each sets the From/To pickers; the bar granularity then
+// follows automatically (Today -> hourly bars, Past Week/Month -> daily, etc.).
+const PRESETS = ['today', 'week', 'month', 'all'];
+
+function setActivePreset(name) {
+  PRESETS.forEach(p =>
+    document.getElementById('preset-' + p).classList.toggle('active', p === name));
+}
+
+function applyPreset(name) {
+  const today = new Date();
+  const from = new Date();
+  if (name === 'week') from.setDate(from.getDate() - 6);
+  else if (name === 'month') from.setDate(from.getDate() - 29);
+  else if (name === 'all') {
+    // earliest bucket on record (buckets arrive sorted ascending)
+    if (usageBuckets.length) from.setTime(usageBuckets[0].hour * 1000);
+  }
+  // 'today' leaves from = today
+  document.getElementById('usage-from').value = toDateInputValue(from);
+  document.getElementById('usage-to').value = toDateInputValue(today);
+  setActivePreset(name);
+  renderUsage();
+}
+
+async function fetchUsage() {
+  try {
+    const res = await fetch('/api/usage');
+    const data = await res.json();
+    usageBuckets = data.buckets || [];
+    if (!usageRangeInitialized) {
+      usageRangeInitialized = true;
+      applyPreset('week'); // default view; also triggers the first render
+    } else {
+      renderUsage();
+    }
+  } catch (e) {
+    console.error('Failed to fetch usage:', e);
+  }
+}
+
+PRESETS.forEach(p =>
+  document.getElementById('preset-' + p).addEventListener('click', () => applyPreset(p)));
+
+// Editing a picker by hand is a custom range, so clear the preset highlight.
+['usage-from', 'usage-to'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    setActivePreset(null);
+    renderUsage();
+  });
+});
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-sessions').classList.toggle('active', tab === 'sessions');
+  document.getElementById('tab-usage').classList.toggle('active', tab === 'usage');
+  document.getElementById('view-sessions').style.display = tab === 'sessions' ? 'block' : 'none';
+  document.getElementById('view-usage').style.display = tab === 'usage' ? 'block' : 'none';
+  if (tab === 'usage') fetchUsage();
+}
+
+document.getElementById('tab-sessions').addEventListener('click', () => switchTab('sessions'));
+document.getElementById('tab-usage').addEventListener('click', () => switchTab('usage'));
+
 // Initial load + auto-refresh
 fetchSessions();
-setInterval(fetchSessions, 10000);
+setInterval(() => {
+  fetchSessions();
+  if (activeTab === 'usage') fetchUsage();
+}, 10000);
 </script>
 
 </body>

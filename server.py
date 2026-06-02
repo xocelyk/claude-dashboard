@@ -83,6 +83,11 @@ def _parse_jsonl(path: Path) -> dict | None:
     model = ""
     cwd = ""
     sdk_check_done = False
+    is_sdk = False
+    is_subagent = "subagents" in str(path)
+    # hour-epoch -> token/cost totals for that hour. Hourly is the finest base
+    # granularity; the frontend rolls these up into day/week buckets in local time.
+    usage_buckets: dict[int, dict] = {}
 
     try:
         with open(path) as f:
@@ -94,11 +99,13 @@ def _parse_jsonl(path: Path) -> dict | None:
                 msg_type = msg.get("type", "")
 
                 # First user record decides whether this is a real session or
-                # an sdk-cli sub-session (e.g. auto-rename helper).
+                # an sdk-cli sub-session (e.g. auto-rename helper). We keep parsing
+                # either way so token buckets are captured for the usage view; the
+                # session list filters these out via the is_sdk flag.
                 if msg_type == "user" and not sdk_check_done:
                     sdk_check_done = True
                     if msg.get("entrypoint") == "sdk-cli":
-                        return None
+                        is_sdk = True
 
                 if msg_type == "ai-title":
                     title = msg.get("aiTitle") or ""
@@ -128,6 +135,18 @@ def _parse_jsonl(path: Path) -> dict | None:
                         usage = inner.get("usage", {})
                         if usage:
                             total_cost += _estimate_cost(usage, turn_model)
+                            if ts:
+                                hour = int(ts // 3600 * 3600)
+                                b = usage_buckets.get(hour)
+                                if b is None:
+                                    b = {"input": 0, "output": 0, "cacheRead": 0,
+                                         "cacheWrite": 0, "cost": 0.0}
+                                    usage_buckets[hour] = b
+                                b["input"] += usage.get("input_tokens", 0)
+                                b["output"] += usage.get("output_tokens", 0)
+                                b["cacheRead"] += usage.get("cache_read_input_tokens", 0)
+                                b["cacheWrite"] += usage.get("cache_creation_input_tokens", 0)
+                                b["cost"] += _estimate_cost(usage, turn_model)
                         if inner.get("model"):
                             model = inner["model"]
                         if ts:
@@ -156,6 +175,9 @@ def _parse_jsonl(path: Path) -> dict | None:
         "total_duration_ms": duration_ms,
         "model": model,
         "cwd": cwd,
+        "usage_buckets": usage_buckets,
+        "is_sdk": is_sdk,
+        "is_subagent": is_subagent,
     }
 
 
@@ -172,23 +194,37 @@ def _parse_with_cache(path: Path) -> dict | None:
     return result
 
 
-def get_jsonl_stats() -> dict[str, dict]:
-    stats: dict[str, dict] = {}
+def _collect_parsed() -> dict[Path, dict]:
+    """Parse every transcript once (subagents included), cached by mtime.
+
+    Subagent and sdk-cli files are parsed too — their token buckets feed the
+    usage view — but callers building the session list filter them out via the
+    is_subagent / is_sdk flags on each result.
+    """
+    results: dict[Path, dict] = {}
     if not PROJECTS_DIR.exists():
-        return stats
+        return results
     seen: set[Path] = set()
     for path in PROJECTS_DIR.rglob("*.jsonl"):
-        if "subagents" in str(path):
-            continue
         seen.add(path)
         result = _parse_with_cache(path)
         if result is None:
             continue
-        stats[path.stem] = result
+        results[path] = result
     # Evict cache entries for files that no longer exist
     for p in list(_PARSE_CACHE.keys()):
         if p not in seen:
             del _PARSE_CACHE[p]
+    return results
+
+
+def get_jsonl_stats() -> dict[str, dict]:
+    """Real sessions only (excludes subagents and sdk-cli helpers), keyed by id."""
+    stats: dict[str, dict] = {}
+    for path, result in _collect_parsed().items():
+        if result.get("is_subagent") or result.get("is_sdk"):
+            continue
+        stats[path.stem] = result
     return stats
 
 
@@ -317,6 +353,77 @@ def build_sessions_json() -> str:
     return json.dumps({"sessions": sessions, "timestamp": time.time()})
 
 
+def build_usage_json() -> str:
+    """Merge every session's hourly token buckets into a single time series.
+
+    Returns hourly buckets (epoch-seconds key) across all transcripts; the
+    frontend groups them into day/week buckets in the browser's local timezone.
+
+    Unlike the session list, this counts every transcript — including subagent
+    runs and sdk-cli helpers — so the totals reflect true token consumption
+    (subagent tokens live in separate files and are additive, not double-counted).
+    """
+    merged: dict[int, dict] = {}
+    for parsed in _collect_parsed().values():
+        for hour, b in parsed.get("usage_buckets", {}).items():
+            m = merged.get(hour)
+            if m is None:
+                m = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "cost": 0.0}
+                merged[hour] = m
+            m["input"] += b["input"]
+            m["output"] += b["output"]
+            m["cacheRead"] += b["cacheRead"]
+            m["cacheWrite"] += b["cacheWrite"]
+            m["cost"] += b["cost"]
+    buckets = [
+        {
+            "hour": hour,
+            "input": m["input"],
+            "output": m["output"],
+            "cacheRead": m["cacheRead"],
+            "cacheWrite": m["cacheWrite"],
+            "cost": round(m["cost"], 6),
+        }
+        for hour, m in sorted(merged.items())
+    ]
+    return json.dumps({"buckets": buckets, "timestamp": time.time()})
+
+
+def _demo_usage_json() -> str:
+    """Deterministic fake hourly buckets over the last ~21 days for previewing."""
+    now = time.time()
+    HOUR = 3600
+    buckets = []
+    # ~21 days of activity, a handful of working hours per day, with a repeating
+    # weekday pattern so the day/week views both look populated.
+    for day in range(21):
+        day_start = int((now - day * 24 * HOUR) // HOUR * HOUR)
+        weekday = day % 7
+        if weekday >= 5:  # lighter weekends
+            active_hours = [10, 15]
+        else:
+            active_hours = [9, 11, 13, 14, 16, 20]
+        for i, h in enumerate(active_hours):
+            scale = 1.0 + 0.3 * ((day + i) % 4) - (0.5 if weekday >= 5 else 0)
+            scale = max(0.3, scale)
+            hour_ts = day_start - (day_start % (24 * HOUR)) + h * HOUR
+            output = int(4200 * scale)
+            inp = int(1500 * scale)
+            cache_read = int(180000 * scale)
+            cache_write = int(22000 * scale)
+            cost = (inp * 5.0 + output * 25.0 + cache_read * 0.5 + cache_write * 6.25) / 1e6
+            buckets.append({
+                "hour": hour_ts,
+                "input": inp,
+                "output": output,
+                "cacheRead": cache_read,
+                "cacheWrite": cache_write,
+                "cost": round(cost, 6),
+            })
+    buckets.sort(key=lambda b: b["hour"])
+    return json.dumps({"buckets": buckets, "timestamp": now})
+
+
 def _demo_sessions_json() -> str:
     """Hardcoded fake data for screenshots / previewing without any real sessions."""
     now = time.time()
@@ -375,6 +482,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         try:
             if self.path == "/api/sessions":
                 data = _demo_sessions_json() if DEMO_MODE else build_sessions_json()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(data.encode())
+            elif self.path == "/api/usage":
+                data = _demo_usage_json() if DEMO_MODE else build_usage_json()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
